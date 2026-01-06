@@ -1,403 +1,542 @@
-import pygame
-import sys
-import json
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geometry Dash - Full Web Clone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(135deg, #0a0a1a, #1a0a2a);
+            color: #fff;
+            font-family: 'Arial Black', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            border: 3px solid #00ffff;
+            border-radius: 10px;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.6);
+            cursor: pointer;
+            image-rendering: pixelated;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px;
+            text-shadow: 0 0 10px #00ffff;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="1000" height="600"></canvas>
+    <div id="ui"></div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const ui = document.getElementById('ui');
 
-# Initialize Pygame
-pygame.init()
+        const WIDTH = 1000;
+        const HEIGHT = 600;
+        const GROUND = HEIGHT - 80;
+        const GRAVITY = 0.8;
+        const JUMP = -16;
+        const SPEED = 7;
+        const CUBE_SIZE = 50;
 
-# Constants
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-GRAVITY = 0.5
-JUMP_STRENGTH = -12
-PLAYER_SIZE = 40
-OBSTACLE_SIZE = 40
-SPIKE_HEIGHT = 40
-GROUND_HEIGHT = SCREEN_HEIGHT - 50
-FPS = 60
+        // Skins
+        const SKINS = [
+            {fill: '#ff4444', glow: '#ff8888'},
+            {fill: '#44ff44', glow: '#88ff88'},
+            {fill: '#4444ff', glow: '#8888ff'},
+            {fill: '#ffff44', glow: '#ffff88'},
+            {fill: '#ff44ff', glow: '#ff88ff'},
+            {fill: '#44ffff', glow: '#88ffff'}
+        ];
+        let skinIndex = 0;
 
-# Colors
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-YELLOW = (255, 255, 0)
-PURPLE = (128, 0, 128)
+        // Game state
+        let state = 'menu'; // menu, skins, levels, custom, game, editor
+        let currentLevel = 0;
+        let isCustom = false;
+        let scrollOffset = 0;
+        let editorScroll = 0;
+        let editorMode = 'spike'; // spike, block
+        let blockHeight = 100;
+        let customLevels = JSON.parse(localStorage.getItem('gdLevels')) || [];
 
-# Skins: list of colors for the player
-SKINS = [RED, GREEN, BLUE, YELLOW, PURPLE]
-SKIN_NAMES = ["Red", "Green", "Blue", "Yellow", "Purple"]
+        // Predefined levels - 5 challenging levels
+        const LEVELS = [
+            // Level 1: Intro
+            [{type: 'spike', x: 800}, {type: 'block', x: 1200, h: 120}, {type: 'spike', x: 1600}],
+            // Level 2: Double spikes
+            [{type: 'spike', x: 600}, {type: 'spike', x: 700}, {type: 'block', x: 1000, h: 100}, {type: 'spike', x: 1400}, {type: 'spike', x: 1500}],
+            // Level 3: Platforms
+            [{type: 'block', x: 500, h: 80}, {type: 'spike', x: 800}, {type: 'block', x: 1100, h: 160}, {type: 'spike', x: 1500}, {type: 'spike', x: 1600}],
+            // Level 4: Tight gaps
+            [{type: 'spike', x: 500}, {type: 'spike', x: 600}, {type: 'block', x: 900, h: 80}, {type: 'spike', x: 1200}, {type: 'block', x: 1500, h: 140}, {type: 'spike', x: 1800}, {type: 'spike', x: 1900}],
+            // Level 5: Boss level - very challenging
+            [{type: 'block', x: 400, h: 80}, {type: 'spike', x: 700}, {type: 'spike', x: 800}, {type: 'block', x: 1100, h: 160}, {type: 'spike', x: 1400}, {type: 'spike', x: 1500}, {type: 'spike', x: 1600}, {type: 'block', x: 1800, h: 120}, {type: 'spike', x: 2200}, {type: 'spike', x: 2300}]
+        ];
 
-# Predefined levels: list of obstacles
-# Each obstacle is a dict: {'type': 'block' or 'spike', 'x': position, 'height': for blocks}
-LEVELS = [
-    # Level 1: Easy
-    [
-        {'type': 'spike', 'x': 400},
-        {'type': 'block', 'x': 600, 'height': 80},
-        {'type': 'spike', 'x': 800},
-    ],
-    # Level 2: Medium
-    [
-        {'type': 'spike', 'x': 300},
-        {'type': 'spike', 'x': 350},
-        {'type': 'block', 'x': 500, 'height': 120},
-        {'type': 'spike', 'x': 700},
-        {'type': 'spike', 'x': 750},
-    ],
-    # Level 3: Harder
-    [
-        {'type': 'block', 'x': 200, 'height': 40},
-        {'type': 'spike', 'x': 300},
-        {'type': 'block', 'x': 400, 'height': 80},
-        {'type': 'spike', 'x': 500},
-        {'type': 'spike', 'x': 550},
-        {'type': 'block', 'x': 700, 'height': 160},
-    ],
-    # Level 4: Challenging
-    [
-        {'type': 'spike', 'x': 250},
-        {'type': 'spike', 'x': 300},
-        {'type': 'block', 'x': 400, 'height': 40},
-        {'type': 'spike', 'x': 500},
-        {'type': 'block', 'x': 600, 'height': 80},
-        {'type': 'spike', 'x': 700},
-        {'type': 'spike', 'x': 750},
-        {'type': 'spike', 'x': 800},
-    ],
-    # Level 5: Very Challenging
-    [
-        {'type': 'block', 'x': 150, 'height': 40},
-        {'type': 'spike', 'x': 250},
-        {'type': 'spike', 'x': 300},
-        {'type': 'block', 'x': 400, 'height': 120},
-        {'type': 'spike', 'x': 500},
-        {'type': 'spike', 'x': 550},
-        {'type': 'block', 'x': 650, 'height': 80},
-        {'type': 'spike', 'x': 750},
-        {'type': 'spike', 'x': 800},
-        {'type': 'spike', 'x': 850},
-    ]
-]
+        // Player
+        let player = {
+            x: 150,
+            y: GROUND - CUBE_SIZE,
+            vy: 0,
+            onGround: true
+        };
 
-# Custom levels file
-CUSTOM_LEVELS_FILE = "custom_levels.json"
-custom_levels = []
+        // Obstacles
+        let obstacles = [];
 
-# Load custom levels if exist
-try:
-    with open(CUSTOM_LEVELS_FILE, 'r') as f:
-        custom_levels = json.load(f)
-except FileNotFoundError:
-    pass
+        // Background elements
+        let bgLines = [];
+        for (let i = 0; i < 20; i++) {
+            bgLines.push({x: i * 100, speed: 2 + i * 0.2});
+        }
+        let bgCube = {
+            x: WIDTH / 2,
+            y: GROUND - CUBE_SIZE,
+            vy: 0,
+            jumpTimer: 0
+        };
 
-class Player:
-    def __init__(self, skin_index=0):
-        self.rect = pygame.Rect(100, GROUND_HEIGHT - PLAYER_SIZE, PLAYER_SIZE, PLAYER_SIZE)
-        self.velocity_y = 0
-        self.is_jumping = False
-        self.skin = SKINS[skin_index]
+        // Particles for effects
+        let particles = [];
 
-    def update(self):
-        self.velocity_y += GRAVITY
-        self.rect.y += self.velocity_y
-        if self.rect.bottom >= GROUND_HEIGHT:
-            self.rect.bottom = GROUND_HEIGHT
-            self.velocity_y = 0
-            self.is_jumping = False
+        function resetLevel() {
+            player.x = 150;
+            player.y = GROUND - CUBE_SIZE;
+            player.vy = 0;
+            player.onGround = true;
+            scrollOffset = 0;
+            const levelData = isCustom ? customLevels[currentLevel] : LEVELS[currentLevel];
+            obstacles = levelData.map(obs => ({...obs}));
+        }
 
-    def jump(self):
-        if not self.is_jumping:
-            self.velocity_y = JUMP_STRENGTH
-            self.is_jumping = True
+        function jump() {
+            if (player.onGround) {
+                player.vy = JUMP;
+                player.onGround = false;
+                addParticles(player.x + CUBE_SIZE/2, player.y + CUBE_SIZE, '#fff', 15);
+            }
+        }
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, self.skin, self.rect)
+        function addParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: Math.random() * -5 - 2,
+                    life: 40,
+                    maxLife: 40,
+                    color
+                });
+            }
+        }
 
-class Obstacle:
-    def __init__(self, obs_dict, scroll_x):
-        self.type = obs_dict['type']
-        self.x = obs_dict['x'] + scroll_x
-        if self.type == 'block':
-            self.height = obs_dict.get('height', OBSTACLE_SIZE)
-            self.rect = pygame.Rect(self.x, GROUND_HEIGHT - self.height, OBSTACLE_SIZE, self.height)
-        elif self.type == 'spike':
-            self.rect = pygame.Rect(self.x, GROUND_HEIGHT - SPIKE_HEIGHT, OBSTACLE_SIZE, SPIKE_HEIGHT)
+        function updateParticles() {
+            particles = particles.filter(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.4;
+                p.life--;
+                p.alpha = p.life / p.maxLife;
+                return p.life > 0;
+            });
+        }
 
-    def update(self, speed):
-        self.x -= speed
-        self.rect.x = self.x
+        function updatePlayer() {
+            player.vy += GRAVITY;
+            player.y += player.vy;
 
-    def draw(self, screen):
-        if self.type == 'block':
-            pygame.draw.rect(screen, RED, self.rect)
-        elif self.type == 'spike':
-            pygame.draw.polygon(screen, RED, [
-                (self.x, GROUND_HEIGHT),
-                (self.x + OBSTACLE_SIZE / 2, GROUND_HEIGHT - SPIKE_HEIGHT),
-                (self.x + OBSTACLE_SIZE, GROUND_HEIGHT)
-            ])
+            if (player.y >= GROUND - CUBE_SIZE) {
+                player.y = GROUND - CUBE_SIZE;
+                player.vy = 0;
+                player.onGround = true;
+            }
+        }
 
-class Button:
-    def __init__(self, x, y, width, height, text, color=BLUE, text_color=WHITE):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.text = text
-        self.color = color
-        self.text_color = text_color
+        function updateGame() {
+            updatePlayer();
+            scrollOffset += SPEED;
+            updateParticles();
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, self.color, self.rect)
-        font = pygame.font.SysFont(None, 36)
-        text_surf = font.render(self.text, True, self.text_color)
-        text_rect = text_surf.get_rect(center=self.rect.center)
-        screen.blit(text_surf, text_rect)
+            // Update obstacles positions (virtual)
+            // Collisions
+            for (let obs of obstacles) {
+                const screenX = obs.x - scrollOffset;
+                if (screenX < -100) continue;
+                if (screenX > WIDTH) continue;
 
-    def is_clicked(self, pos):
-        return self.rect.collidepoint(pos)
+                if (obs.type === 'spike') {
+                    if (player.x + CUBE_SIZE > screenX && player.x < screenX + 60 &&
+                        player.y + CUBE_SIZE > GROUND - 60) {
+                        // Death
+                        addParticles(player.x + CUBE_SIZE/2, player.y + CUBE_SIZE/2, '#ff4444', 30);
+                        setTimeout(() => state = 'menu', 800);
+                        return;
+                    }
+                } else if (obs.type === 'block') {
+                    if (player.x + CUBE_SIZE > screenX && player.x < screenX + 80 &&
+                        player.y + CUBE_SIZE > GROUND - obs.h &&
+                        player.y + CUBE_SIZE < GROUND + 10 &&
+                        player.vy >= 0) {
+                        player.y = GROUND - obs.h - CUBE_SIZE;
+                        player.vy = 0;
+                        player.onGround = true;
+                    }
+                }
+            }
 
-class Game:
-    def __init__(self):
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Geometry Dash Clone")
-        self.clock = pygame.time.Clock()
-        self.state = "menu"
-        self.current_level = 0
-        self.is_custom = False
-        self.player = Player()
-        self.obstacles = []
-        self.scroll_x = 0
-        self.speed = 5
-        self.selected_skin = 0
-        self.editor_obstacles = []
-        self.editor_mode = "place_spike"  # or "place_block" or "set_height"
-        self.editor_block_height = 40
-        self.background_block = Player()
-        self.background_block.rect.x = SCREEN_WIDTH // 2
-        self.background_block.rect.y = GROUND_HEIGHT - PLAYER_SIZE
-        self.bg_jump_timer = 0
+            // Win condition
+            const maxX = Math.max(...obstacles.map(o => o.x));
+            if (scrollOffset > maxX + 400) {
+                setTimeout(() => {
+                    alert('Level Complete! 🎉');
+                    state = 'menu';
+                }, 500);
+            }
+        }
 
-    def reset_level(self):
-        self.player = Player(self.selected_skin)
-        self.obstacles = []
-        self.scroll_x = 0
-        level_data = custom_levels[self.current_level] if self.is_custom else LEVELS[self.current_level]
-        for obs in level_data:
-            self.obstacles.append(Obstacle(obs, self.scroll_x))
+        function drawRect(x, y, w, h, color, glow = false) {
+            if (glow) {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 20;
+            }
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+            ctx.shadowBlur = 0;
+        }
 
-    def run(self):
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.save_custom_levels()
-                    pygame.quit()
-                    sys.exit()
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    if self.state == "menu":
-                        self.handle_menu_click(event.pos)
-                    elif self.state == "skins":
-                        self.handle_skins_click(event.pos)
-                    elif self.state == "levels":
-                        self.handle_levels_click(event.pos)
-                    elif self.state == "editor":
-                        self.handle_editor_click(event.pos)
-                if event.type == pygame.KEYDOWN:
-                    if self.state == "game" and event.key == pygame.K_SPACE:
-                        self.player.jump()
-                    elif self.state == "editor":
-                        if event.key == pygame.K_s:
-                            self.editor_mode = "place_spike"
-                        elif event.key == pygame.K_b:
-                            self.editor_mode = "place_block"
-                        elif event.key == pygame.K_UP:
-                            self.editor_block_height += 40
-                        elif event.key == pygame.K_DOWN:
-                            self.editor_block_height = max(40, self.editor_block_height - 40)
-                        elif event.key == pygame.K_c:
-                            self.editor_obstacles.clear()
-                        elif event.key == pygame.K_RETURN:
-                            custom_levels.append(self.editor_obstacles[:])
-                            self.save_custom_levels()
-                            self.state = "menu"
+        function drawSpike(x) {
+            ctx.fillStyle = '#ff3366';
+            ctx.shadowColor = '#ff6699';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.moveTo(x, GROUND);
+            ctx.lineTo(x + 30, GROUND - 60);
+            ctx.lineTo(x + 60, GROUND);
+            ctx.closePath();
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
 
-            self.screen.fill(BLACK)
+        function drawPlayer() {
+            const skin = SKINS[skinIndex];
+            const px = player.x - scrollOffset + 100; // Offset for centering
+            drawRect(px, player.y, CUBE_SIZE, CUBE_SIZE, skin.fill, true);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(px + 4, player.y + 4, CUBE_SIZE - 8, CUBE_SIZE - 8);
+        }
 
-            if self.state == "menu":
-                self.draw_menu()
-            elif self.state == "skins":
-                self.draw_skins()
-            elif self.state == "levels":
-                self.draw_levels()
-            elif self.state == "game":
-                self.update_game()
-                self.draw_game()
-            elif self.state == "editor":
-                self.update_editor()
-                self.draw_editor()
+        function drawObstacles() {
+            obstacles.forEach(obs => {
+                const x = obs.x - scrollOffset + 100;
+                if (x < -100 || x > WIDTH) return;
+                if (obs.type === 'spike') {
+                    drawSpike(x);
+                } else {
+                    drawRect(x, GROUND - obs.h, 80, obs.h, '#ff5544', true);
+                }
+            });
+        }
 
-            pygame.display.flip()
-            self.clock.tick(FPS)
+        function drawBackground() {
+            // Moving lines
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx.lineWidth = 2;
+            bgLines.forEach(line => {
+                line.x -= line.speed;
+                if (line.x < -100) line.x = WIDTH;
+                ctx.beginPath();
+                ctx.moveTo(line.x, 0);
+                ctx.lineTo(line.x, HEIGHT);
+                ctx.stroke();
+            });
 
-    def draw_menu(self):
-        self.update_background_animation()
-        self.background_block.draw(self.screen)
+            // Ground glow
+            const grad = ctx.createLinearGradient(0, GROUND, 0, HEIGHT);
+            grad.addColorStop(0, 'rgba(0,255,255,0.4)');
+            grad.addColorStop(1, 'rgba(0,100,200,0.1)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
+        }
 
-        title_font = pygame.font.SysFont(None, 72)
-        title = title_font.render("Geometry Dash Clone", True, WHITE)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 10;
+                ctx.fillRect(p.x - scrollOffset + 100, p.y, 6, 6);
+                ctx.restore();
+            });
+        }
 
-        play_button = Button(SCREEN_WIDTH // 2 - 100, 200, 200, 50, "Play Levels")
-        create_button = Button(SCREEN_WIDTH // 2 - 100, 260, 200, 50, "Create Level")
-        skins_button = Button(SCREEN_WIDTH // 2 - 100, 320, 200, 50, "Select Skin")
-        custom_button = Button(SCREEN_WIDTH // 2 - 100, 380, 200, 50, "Custom Levels")
-        quit_button = Button(SCREEN_WIDTH // 2 - 100, 440, 200, 50, "Quit")
+        function drawUI() {
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Skin: ${skinIndex + 1}`, 20, 40);
+            if (state === 'game') {
+                ctx.fillText(`Progress: ${(scrollOffset / 2500 * 100).toFixed(0)}%`, 20, HEIGHT - 40);
+            }
+        }
 
-        play_button.draw(self.screen)
-        create_button.draw(self.screen)
-        skins_button.draw(self.screen)
-        custom_button.draw(self.screen)
-        quit_button.draw(self.screen)
+        // Menu drawing
+        function drawMenu() {
+            drawBackground();
 
-        self.menu_buttons = [play_button, create_button, skins_button, custom_button, quit_button]
+            // Jumping bg cube
+            bgCube.jumpTimer++;
+            bgCube.vy += GRAVITY * 0.7;
+            bgCube.y += bgCube.vy;
+            if (bgCube.y > GROUND - CUBE_SIZE) {
+                bgCube.y = GROUND - CUBE_SIZE;
+                bgCube.vy = 0;
+                if (bgCube.jumpTimer > 100) {
+                    bgCube.vy = JUMP * 1.2;
+                    bgCube.jumpTimer = 0;
+                }
+            }
+            drawRect(bgCube.x - CUBE_SIZE/2, bgCube.y, CUBE_SIZE, CUBE_SIZE, '#ffffff', true);
 
-    def handle_menu_click(self, pos):
-        if self.menu_buttons[0].is_clicked(pos):  # Play
-            self.state = "levels"
-            self.is_custom = False
-        elif self.menu_buttons[1].is_clicked(pos):  # Create
-            self.state = "editor"
-            self.editor_obstacles = []
-        elif self.menu_buttons[2].is_clicked(pos):  # Skins
-            self.state = "skins"
-        elif self.menu_buttons[3].is_clicked(pos):  # Custom
-            self.state = "levels"
-            self.is_custom = True
-        elif self.menu_buttons[4].is_clicked(pos):  # Quit
-            self.save_custom_levels()
-            pygame.quit()
-            sys.exit()
+            // Title
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 30;
+            ctx.font = 'bold 80px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('GEOMETRY DASH', WIDTH/2, 150);
+            ctx.shadowBlur = 0;
 
-    def draw_skins(self):
-        title_font = pygame.font.SysFont(None, 72)
-        title = title_font.render("Select Skin", True, WHITE)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
+            // Buttons
+            const buttons = [
+                {text: 'PLAY LEVELS', y: 280, cb: () => {state = 'levels'; isCustom = false;}},
+                {text: 'CUSTOM LEVELS', y: 350, cb: () => {state = 'levels'; isCustom = true;}},
+                {text: 'SKINS', y: 420, cb: () => state = 'skins'},
+                {text: 'LEVEL EDITOR', y: 490, cb: () => {state = 'editor'; obstacles = []; editorScroll = 0;}},
+            ];
+            buttons.forEach((b, i) => {
+                const by = b.y;
+                ctx.fillStyle = 'rgba(0,255,255,0.2)';
+                ctx.fillRect(WIDTH/2 - 200, by - 30, 400, 60);
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(WIDTH/2 - 200, by - 30, 400, 60);
+                ctx.fillStyle = '#00ffff';
+                ctx.font = 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(b.text, WIDTH/2, by + 10);
+            });
+            window.menuButtons = buttons;
+        }
 
-        self.skin_buttons = []
-        for i, skin in enumerate(SKINS):
-            button = Button(100 + i * 150, 200, 100, 50, SKIN_NAMES[i], skin)
-            button.draw(self.screen)
-            self.skin_buttons.append(button)
+        function drawSkins() {
+            drawBackground();
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 60px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('SELECT SKIN', WIDTH/2, 150);
 
-        back_button = Button(SCREEN_WIDTH // 2 - 100, 500, 200, 50, "Back")
-        back_button.draw(self.screen)
-        self.skin_buttons.append(back_button)
+            SKINS.forEach((skin, i) => {
+                const sx = 200 + (i % 3) * 250;
+                const sy = 250 + Math.floor(i / 3) * 150;
+                drawRect(sx, sy, 80, 80, skin.fill, true);
+                if (i === skinIndex) {
+                    ctx.strokeStyle = '#00ffff';
+                    ctx.lineWidth = 5;
+                    ctx.strokeRect(sx - 5, sy - 5, 90, 90);
+                }
+            });
 
-    def handle_skins_click(self, pos):
-        for i, button in enumerate(self.skin_buttons[:-1]):
-            if button.is_clicked(pos):
-                self.selected_skin = i
-                self.state = "menu"
-                return
-        if self.skin_buttons[-1].is_clicked(pos):  # Back
-            self.state = "menu"
+            // Back button
+            ctx.fillStyle = 'rgba(0,255,255,0.2)';
+            ctx.fillRect(WIDTH/2 - 120, 520, 240, 50);
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(WIDTH/2 - 120, 520, 240, 50);
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText('BACK', WIDTH/2, 555);
+            window.skinBackRect = {x: WIDTH/2 - 120, y: 520, w: 240, h: 50};
+        }
 
-    def draw_levels(self):
-        title_font = pygame.font.SysFont(None, 72)
-        title = title_font.render("Select Level" if not self.is_custom else "Select Custom Level", True, WHITE)
-        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 100))
+        function drawLevels() {
+            drawBackground();
+            const levelsList = isCustom ? customLevels : LEVELS;
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 60px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(isCustom ? 'CUSTOM LEVELS' : 'SELECT LEVEL', WIDTH/2, 150);
 
-        levels_data = custom_levels if self.is_custom else LEVELS
-        self.level_buttons = []
-        for i in range(len(levels_data)):
-            button = Button(SCREEN_WIDTH // 2 - 100, 200 + i * 60, 200, 50, f"Level {i+1}")
-            button.draw(self.screen)
-            self.level_buttons.append(button)
+            levelsList.slice(0, 8).forEach((_, i) => { // Max 8 shown
+                const by = 250 + i * 60;
+                ctx.fillStyle = 'rgba(0,255,255,0.15)';
+                ctx.fillRect(WIDTH/2 - 180, by - 25, 360, 50);
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(WIDTH/2 - 180, by - 25, 360, 50);
+                ctx.fillStyle = '#00ffff';
+                ctx.font = 'bold 32px Arial';
+                ctx.fillText(`LEVEL ${i+1}`, WIDTH/2, by + 8);
+            });
 
-        back_button = Button(SCREEN_WIDTH // 2 - 100, 200 + len(levels_data) * 60, 200, 50, "Back")
-        back_button.draw(self.screen)
-        self.level_buttons.append(back_button)
+            // Back
+            ctx.fillStyle = 'rgba(0,255,255,0.2)';
+            ctx.fillRect(WIDTH/2 - 120, 520, 240, 50);
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(WIDTH/2 - 120, 520, 240, 50);
+            ctx.fillStyle = '#00ffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText('BACK', WIDTH/2, 555);
+            window.levelsList = levelsList;
+        }
 
-    def handle_levels_click(self, pos):
-        for i, button in enumerate(self.level_buttons[:-1]):
-            if button.is_clicked(pos):
-                self.current_level = i
-                self.reset_level()
-                self.state = "game"
-                return
-        if self.level_buttons[-1].is_clicked(pos):  # Back
-            self.state = "menu"
+        function drawEditor() {
+            drawBackground();
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
 
-    def update_game(self):
-        self.player.update()
+            // Draw placed obstacles
+            obstacles.forEach(obs => {
+                const x = obs.x - editorScroll;
+                if (x < -100 || x > WIDTH) return;
+                if (obs.type === 'spike') drawSpike(x);
+                else drawRect(x, GROUND - obs.h, 80, obs.h, '#ff5544');
+            });
 
-        # Scroll
-        self.scroll_x += self.speed
-        for obs in self.obstacles:
-            obs.update(self.speed)
+            // Instructions
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Mode: ${editorMode.toUpperCase()} | Height: ${blockHeight}px`, 20, 40);
+            ctx.fillText('S=Spike B=Block +/- Height C=Clear ENTER=Save ARROWS=Scroll', 20, 70);
+            ctx.textAlign = 'center';
 
-        # Remove off-screen obstacles
-        self.obstacles = [obs for obs in self.obstacles if obs.x > -OBSTACLE_SIZE]
+            // Scroll indicator
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillRect(WIDTH - 150, 20, 120, 20);
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(WIDTH - 150 + (editorScroll / 5000 * 120), 20, 10, 20);
+        }
 
-        # Collision detection
-        for obs in self.obstacles:
-            if self.player.rect.colliderect(obs.rect):
-                self.state = "menu"  # Die and back to menu
-                return
+        function drawGame() {
+            drawBackground();
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(0, GROUND, WIDTH, HEIGHT - GROUND);
 
-        # Win condition: if scrolled far enough
-        if self.scroll_x > max(obs['x'] for obs in (custom_levels if self.is_custom else LEVELS)[self.current_level]) + SCREEN_WIDTH:
-            self.state = "menu"  # Win and back to menu
+            drawObstacles();
+            drawPlayer();
+            drawParticles();
+            drawUI();
+        }
 
-        # Jump on mouse click too
-        if pygame.mouse.get_pressed()[0]:
-            self.player.jump()
+        // Main render
+        function render() {
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            switch (state) {
+                case 'menu': drawMenu(); break;
+                case 'skins': drawSkins(); break;
+                case 'levels':
+                case 'custom': drawLevels(); break;
+                case 'game': drawGame(); break;
+                case 'editor': drawEditor(); break;
+            }
+            requestAnimationFrame(render);
+        }
 
-    def draw_game(self):
-        self.player.draw(self.screen)
-        for obs in self.obstacles:
-            obs.draw(self.screen)
+        // Events
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
 
-        # Draw ground
-        pygame.draw.line(self.screen, WHITE, (0, GROUND_HEIGHT), (SCREEN_WIDTH, GROUND_HEIGHT), 5)
+            if (state === 'game') {
+                jump();
+            } else if (state === 'menu') {
+                window.menuButtons?.forEach(b => {
+                    if (x > WIDTH/2 - 200 && x < WIDTH/2 + 200 && y > b.y - 30 && y < b.y + 30) {
+                        b.cb();
+                    }
+                });
+            } else if (state === 'skins') {
+                if (x > window.skinBackRect.x && x < window.skinBackRect.x + window.skinBackRect.w &&
+                    y > window.skinBackRect.y && y < window.skinBackRect.y + window.skinBackRect.h) {
+                    state = 'menu';
+                }
+                SKINS.forEach((_, i) => {
+                    const sx = 200 + (i % 3) * 250;
+                    const sy = 250 + Math.floor(i / 3) * 150;
+                    if (x > sx && x < sx + 80 && y > sy && y < sy + 80) {
+                        skinIndex = i;
+                        state = 'menu';
+                    }
+                });
+            } else if (state === 'levels' || state === 'custom') {
+                const list = window.levelsList;
+                list.forEach((_, i) => {
+                    const by = 250 + i * 60;
+                    if (y > by - 25 && y < by + 25 && list[i]) {
+                        currentLevel = i;
+                        resetLevel();
+                        state = 'game';
+                        isCustom = state === 'custom';
+                    }
+                });
+                if (x > WIDTH/2 - 120 && x < WIDTH/2 + 120 && y > 520 && y < 570) {
+                    state = 'menu';
+                }
+            } else if (state === 'editor') {
+                const placeX = x + editorScroll;
+                if (editorMode === 'spike') {
+                    obstacles.push({type: 'spike', x: placeX});
+                } else {
+                    obstacles.push({type: 'block', x: placeX, h: blockHeight});
+                }
+            }
+        });
 
-    def update_editor(self):
-        mouse_pos = pygame.mouse.get_pos()
-        if pygame.mouse.get_pressed()[0]:
-            click_x = mouse_pos[0] + self.scroll_x  # Adjust for scroll if needed, but for editor, maybe no scroll
-            if self.editor_mode == "place_spike":
-                self.editor_obstacles.append({'type': 'spike', 'x': click_x})
-            elif self.editor_mode == "place_block":
-                self.editor_obstacles.append({'type': 'block', 'x': click_x, 'height': self.editor_block_height})
+        document.addEventListener('keydown', (e) => {
+            if (state === 'game' && e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            } else if (state === 'editor') {
+                e.preventDefault();
+                if (e.key === 's' || e.key === 'S') editorMode = 'spike';
+                if (e.key === 'b' || e.key === 'B') editorMode = 'block';
+                if (e.key === 'ArrowUp') blockHeight = Math.min(300, blockHeight + 20);
+                if (e.key === 'ArrowDown') blockHeight = Math.max(60, blockHeight - 20);
+                if (e.key === 'c' || e.key === 'C') obstacles = [];
+                if (e.key === 'Enter') {
+                    if (obstacles.length > 5) { // Min obstacles
+                        customLevels.push(obstacles.map(o => ({...o})));
+                        localStorage.setItem('gdLevels', JSON.stringify(customLevels));
+                        alert('Level saved!');
+                    }
+                    state = 'menu';
+                }
+                if (e.key === 'ArrowLeft') editorScroll = Math.max(0, editorScroll - 50);
+                if (e.key === 'ArrowRight') editorScroll += 50;
+            }
+        });
 
-    def draw_editor(self):
-        title_font = pygame.font.SysFont(None, 48)
-        instructions = [
-            "Editor: S - Spike, B - Block, UP/DOWN - Block Height",
-            f"Current Mode: {self.editor_mode}, Block Height: {self.editor_block_height}",
-            "C - Clear, ENTER - Save and Exit"
-        ]
-        for i, instr in enumerate(instructions):
-            text = title_font.render(instr, True, WHITE)
-            self.screen.blit(text, (20, 20 + i * 40))
-
-        for obs_dict in self.editor_obstacles:
-            obs = Obstacle(obs_dict, 0)  # No scroll in editor
-            obs.draw(self.screen)
-
-        # Draw ground
-        pygame.draw.line(self.screen, WHITE, (0, GROUND_HEIGHT), (SCREEN_WIDTH, GROUND_HEIGHT), 5)
-
-    def save_custom_levels(self):
-        with open(CUSTOM_LEVELS_FILE, 'w') as f:
-            json.dump(custom_levels, f)
-
-    def update_background_animation(self):
-        self.background_block.update()
-        self.bg_jump_timer += 1
-        if self.bg_jump_timer > 60:  # Jump every second
-            self.background_block.jump()
-            self.bg_jump_timer = 0
-
-if __name__ == "__main__":
-    game = Game()
-    game.run()
+        // Init
+        resetLevel();
+        render();
+    </script>
+</body>
+</html>
